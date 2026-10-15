@@ -1,0 +1,8 @@
+---
+# Connect through AWS Systems Manager Session Manager: no SSH keys, no open ports, no bastion.
+# Needs boto3 and the session-manager-plugin on the control node.
+ansible_connection: amazon.aws.aws_ssm
+ansible_aws_ssm_region: us-east-1
+# Terraform output `ansible_ssm_bucket`; Session Manager uses it to transfer modules.
+ansible_aws_ssm_bucket_name: "{{ lookup('ansible.builtin.env', 'ANSIBLE_SSM_BUCKET') }}"
+ansible_python_interpreter: /usr/bin/python3

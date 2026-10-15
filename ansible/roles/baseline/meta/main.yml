@@ -1,0 +1,11 @@
+---
+galaxy_info:
+  author: Jose D. Germosen
+  description: Baseline packages, time sync, journald retention, and login banner for Amazon Linux 2023
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Amazon
+      versions:
+        - all
+dependencies: []

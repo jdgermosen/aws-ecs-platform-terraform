@@ -1,0 +1,162 @@
+name: Terraform
+
+on:
+  pull_request:
+    paths:
+      - "bootstrap/**"
+      - "envs/**"
+      - "modules/**"
+      - ".tflint.hcl"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [main]
+    paths:
+      - "envs/**"
+      - "modules/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-dev
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: 1.13.3
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  ENV_DIR: envs/dev
+
+jobs:
+  checks:
+    name: Format, validate, lint, scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform validate (dev)
+        run: |
+          terraform -chdir="$ENV_DIR" init -backend=false
+          terraform -chdir="$ENV_DIR" validate
+
+      - name: terraform validate (bootstrap)
+        run: |
+          terraform -chdir=bootstrap init -backend=false
+          terraform -chdir=bootstrap validate
+
+      - uses: terraform-linters/setup-tflint@v6
+
+      - name: tflint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+          tflint --recursive --config "$GITHUB_WORKSPACE/.tflint.hcl"
+
+      - name: Checkov security scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          quiet: true
+          compact: true
+
+  plan:
+    name: Plan (pull request)
+    needs: checks
+    if: github.event_name == 'pull_request' && vars.AWS_PLAN_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC token for AWS
+      pull-requests: write # post the plan as a comment
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: AWS credentials (read-only plan role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        run: >-
+          terraform -chdir="$ENV_DIR" init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: terraform plan
+        run: |
+          terraform -chdir="$ENV_DIR" plan -lock-timeout=5m -no-color -out=tfplan
+          terraform -chdir="$ENV_DIR" show -no-color tfplan > plan.txt
+
+      - name: Comment the plan on the pull request
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = fs.readFileSync('plan.txt', 'utf8');
+            if (plan.length > 60000) plan = plan.slice(0, 60000) + '\n... (truncated)';
+            const body = `### Terraform plan: \`${process.env.ENV_DIR}\`\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${plan}\n\`\`\`\n</details>`;
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+  apply:
+    name: Apply (main)
+    needs: checks
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AWS_APPLY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    environment: dev # protected environment: required reviewers approve before this job starts
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: AWS credentials (apply role via OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: terraform init
+        run: >-
+          terraform -chdir="$ENV_DIR" init
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="region=${{ vars.AWS_REGION }}"
+
+      - name: terraform plan
+        run: terraform -chdir="$ENV_DIR" plan -lock-timeout=5m -out=tfplan
+
+      - name: terraform apply
+        run: terraform -chdir="$ENV_DIR" apply -lock-timeout=5m tfplan
+
+      - name: Smoke test the load balancer
+        run: |
+          url="$(terraform -chdir="$ENV_DIR" output -raw app_url)"
+          for attempt in $(seq 1 20); do
+            if curl -fsS -o /dev/null "$url"; then echo "Healthy: $url"; exit 0; fi
+            echo "Waiting for $url ($attempt/20)"; sleep 15
+          done
+          echo "Service did not become healthy"; exit 1

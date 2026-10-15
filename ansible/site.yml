@@ -1,0 +1,8 @@
+---
+- name: Configure ops hosts
+  hosts: role_ops
+  become: true
+  roles:
+    - baseline
+    - hardening
+    - cloudwatch_agent

@@ -1,0 +1,11 @@
+---
+baseline_timezone: UTC
+baseline_packages:
+  - audit
+  - chrony
+  - dnf-plugins-core
+  - jq
+  - tmux
+baseline_journal_max_use: 500M
+baseline_motd: |
+  Authorized use only. Activity on this system is logged and monitored.

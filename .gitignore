@@ -1,0 +1,22 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+crash.log
+backend.hcl
+terraform.tfvars
+*.auto.tfvars
+.terraform.tfstate.lock.info
+
+# Ansible
+*.retry
+.ansible/
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+.venv/

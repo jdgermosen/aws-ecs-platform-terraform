@@ -1,0 +1,43 @@
+---
+- name: Install baseline packages
+  ansible.builtin.dnf:
+    name: "{{ baseline_packages }}"
+    state: present
+
+- name: Set the system timezone
+  community.general.timezone:
+    name: "{{ baseline_timezone }}"
+
+- name: Keep time synced with the Amazon Time Sync Service
+  ansible.builtin.systemd_service:
+    name: chronyd
+    state: started
+    enabled: true
+
+- name: Create the journald drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Keep a persistent, size-limited system journal
+  ansible.builtin.template:
+    src: journald-retention.conf.j2
+    dest: /etc/systemd/journald.conf.d/50-retention.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald
+
+- name: Set the login banner
+  ansible.builtin.copy:
+    content: "{{ baseline_motd }}"
+    dest: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - /etc/motd
+    - /etc/issue.net

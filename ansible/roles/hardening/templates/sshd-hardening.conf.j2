@@ -1,0 +1,4 @@
+# {{ ansible_managed }}
+{% for key, value in hardening_sshd_settings.items() %}
+{{ key }} {{ value }}
+{% endfor %}

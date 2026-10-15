@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (git-ignored) to override defaults.
+region   = "us-east-1"
+nat_mode = "instance" # "gateway" for highly available managed NAT
+
+# Optional
+# certificate_arn = "arn:aws:acm:us-east-1:<account-id>:certificate/<id>"
+# alert_email     = "you@example.com"

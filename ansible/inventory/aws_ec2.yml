@@ -1,0 +1,16 @@
+---
+# Dynamic inventory: every running instance tagged Project=ecs-platform becomes a host,
+# grouped by its Role and Environment tags (e.g. role_ops, env_dev).
+plugin: amazon.aws.aws_ec2
+regions:
+  - us-east-1
+filters:
+  tag:Project: ecs-platform
+  instance-state-name: running
+hostnames:
+  - instance-id # Session Manager connects by instance ID, not IP
+keyed_groups:
+  - key: tags.Role
+    prefix: role
+  - key: tags.Environment
+    prefix: env
